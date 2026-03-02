@@ -8,7 +8,7 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from transformers import BitsAndBytesConfig, Qwen2VLForConditionalGeneration, AutoProcessor
 
 from app.config import settings
 from utils.logging_config import logger
@@ -36,17 +36,30 @@ class VLMInference:
             logger.warning("CUDA requested but unavailable, falling back to CPU")
             self.device = "cpu"
 
-        logger.info("Loading Qwen2-VL model: %s", self.model_name)
+        logger.info("Loading Qwen2-VL model: %s (4-bit quantized)", self.model_name)
         token = settings.hf_token or None
         self.processor = AutoProcessor.from_pretrained(
             self.model_name,
             trust_remote_code=True,
             token=token,
         )
+
+        # 4-bit quantization config — reduces VRAM from ~15 GB to ~4-5 GB,
+        # enabling Qwen2-VL-7B to run comfortably on a T4 (16 GB).
+        quantization_config = None
+        if self.device == "cuda":
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+            )
+
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             self.model_name,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
             device_map="auto" if self.device == "cuda" else None,
+            quantization_config=quantization_config,
             trust_remote_code=True,
             token=token,
         )
