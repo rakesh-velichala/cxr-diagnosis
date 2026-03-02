@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Data (large files — not tracked in git)
+data/images/
+data/dataset_embeddings.npy
+data/embedding_index.npy
+data/dataset.csv
+
+# Model cache
+*.bin
+*.safetensors
+.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
