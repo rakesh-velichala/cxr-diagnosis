@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Launch both the FastAPI backend and Gradio UI concurrently."""
+"""Launch the CXR Diagnosis application.
+
+By default, starts only the Gradio UI (which loads the pipeline once).
+Use --api to also start the FastAPI backend in a separate process.
+"""
 
 from __future__ import annotations
 
+import argparse
 import multiprocessing
 import sys
 from pathlib import Path
 
-# Ensure project root is on sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from utils.logging_config import logger
@@ -28,7 +32,7 @@ def start_api() -> None:
 
 
 def start_ui() -> None:
-    """Start the Gradio UI."""
+    """Start the Gradio UI (loads the pipeline directly)."""
     from app.config import settings
     from ui.gradio_app import build_ui
 
@@ -42,21 +46,21 @@ def start_ui() -> None:
 
 
 def main() -> None:
-    api_proc = multiprocessing.Process(target=start_api, daemon=True)
-    ui_proc = multiprocessing.Process(target=start_ui, daemon=True)
+    parser = argparse.ArgumentParser(description="Launch CXR Diagnosis")
+    parser.add_argument(
+        "--api",
+        action="store_true",
+        help="Also start the FastAPI backend (uses extra GPU memory)",
+    )
+    args = parser.parse_args()
 
-    api_proc.start()
-    ui_proc.start()
+    if args.api:
+        api_proc = multiprocessing.Process(target=start_api, daemon=True)
+        api_proc.start()
+        logger.info("FastAPI started in background")
 
-    logger.info("Both services started. Press Ctrl+C to stop.")
-
-    try:
-        api_proc.join()
-        ui_proc.join()
-    except KeyboardInterrupt:
-        logger.info("Shutting down …")
-        api_proc.terminate()
-        ui_proc.terminate()
+    # Run Gradio in the main process.
+    start_ui()
 
 
 if __name__ == "__main__":

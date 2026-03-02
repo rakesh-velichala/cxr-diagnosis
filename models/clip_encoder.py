@@ -30,10 +30,8 @@ class CLIPEncoder:
         device: Optional[str] = None,
     ) -> None:
         self.model_name = model_name or settings.clip_model_name
-        self.device = device or settings.device
-        if self.device == "cuda" and not torch.cuda.is_available():
-            logger.warning("CUDA requested but unavailable, falling back to CPU")
-            self.device = "cpu"
+        # CLIP runs on CPU to save GPU VRAM for the larger VLM model.
+        self.device = device or "cpu"
 
         logger.info("Loading CLIP model: %s on %s", self.model_name, self.device)
         self.processor = CLIPProcessor.from_pretrained(self.model_name)

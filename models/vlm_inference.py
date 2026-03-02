@@ -101,6 +101,14 @@ class VLMInference:
         str
             Generated diagnosis text.
         """
+        # Resize large images to limit GPU memory usage during inference.
+        max_pixels = 512 * 512
+        w, h = image.size
+        if w * h > max_pixels:
+            scale = (max_pixels / (w * h)) ** 0.5
+            image = image.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+            logger.info("Resized image to %dx%d for VLM inference", image.width, image.height)
+
         image_uri = self._image_to_base64(image)
 
         messages = [

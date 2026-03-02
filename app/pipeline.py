@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+import torch
 from PIL import Image
 
 from app.config import settings
@@ -72,6 +73,10 @@ class DiagnosisPipeline:
         # Step 3: Build the prompt with few-shot context.
         logger.info("Step 3/4 — Building prompt")
         prompt = build_prompt(similar_cases)
+
+        # Free GPU memory before VLM inference.
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         # Step 4: Run VLM inference.
         logger.info("Step 4/4 — Running VLM inference")
