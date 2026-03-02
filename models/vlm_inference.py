@@ -1,4 +1,4 @@
-"""Qwen2-VL Vision-Language Model inference for chest X-ray diagnosis."""
+"""Qwen2.5-VL Vision-Language Model inference for chest X-ray diagnosis."""
 
 from __future__ import annotations
 
@@ -8,19 +8,19 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import BitsAndBytesConfig, Qwen2VLForConditionalGeneration, AutoProcessor
+from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
 from app.config import settings
 from utils.logging_config import logger
 
 
 class VLMInference:
-    """Run Qwen2-VL inference on chest X-ray images.
+    """Run Qwen2.5-VL inference on chest X-ray images.
 
     Parameters
     ----------
     model_name : str, optional
-        Hugging Face model ID for Qwen2-VL.
+        Hugging Face model ID for Qwen2.5-VL.
     device : str, optional
         Torch device string.
     """
@@ -36,7 +36,7 @@ class VLMInference:
             logger.warning("CUDA requested but unavailable, falling back to CPU")
             self.device = "cpu"
 
-        logger.info("Loading Qwen2-VL model: %s (4-bit quantized)", self.model_name)
+        logger.info("Loading VLM model: %s (4-bit quantized)", self.model_name)
         token = settings.hf_token or None
         self.processor = AutoProcessor.from_pretrained(
             self.model_name,
@@ -45,7 +45,7 @@ class VLMInference:
         )
 
         # 4-bit quantization config — reduces VRAM from ~15 GB to ~4-5 GB,
-        # enabling Qwen2-VL-7B to run comfortably on a T4 (16 GB).
+        # enabling Qwen2.5-VL-7B to run comfortably on a T4 (16 GB).
         quantization_config = None
         if self.device == "cuda":
             quantization_config = BitsAndBytesConfig(
@@ -55,7 +55,7 @@ class VLMInference:
                 bnb_4bit_use_double_quant=True,
             )
 
-        self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+        self.model = AutoModelForImageTextToText.from_pretrained(
             self.model_name,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
             device_map="auto" if self.device == "cuda" else None,
@@ -64,7 +64,7 @@ class VLMInference:
             token=token,
         )
         self.model.eval()
-        logger.info("Qwen2-VL model loaded successfully")
+        logger.info("VLM model loaded successfully")
 
     @staticmethod
     def _image_to_base64(image: Image.Image) -> str:

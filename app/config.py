@@ -39,7 +39,7 @@ class AppConfig:
     )
     vlm_model_name: str = field(
         default_factory=lambda: os.getenv(
-            "CXR_VLM_MODEL", "Qwen/Qwen2-VL-7B-Instruct"
+            "CXR_VLM_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"
         )
     )
     hf_token: str = field(
