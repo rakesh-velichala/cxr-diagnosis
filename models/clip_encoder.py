@@ -56,8 +56,10 @@ class CLIPEncoder:
             Embedding vector of shape ``(D,)``.
         """
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
-        outputs = self.model.get_image_features(**inputs)
-        embedding = outputs.cpu().numpy().squeeze()
+        image_features = self.model.get_image_features(**inputs)
+        if not isinstance(image_features, torch.Tensor):
+            image_features = image_features.pooler_output
+        embedding = image_features.cpu().numpy().squeeze()
         return embedding
 
     @torch.no_grad()
@@ -83,8 +85,10 @@ class CLIPEncoder:
             inputs = self.processor(images=batch, return_tensors="pt", padding=True).to(
                 self.device
             )
-            outputs = self.model.get_image_features(**inputs)
-            batch_emb = outputs.cpu().numpy()
+            image_features = self.model.get_image_features(**inputs)
+            if not isinstance(image_features, torch.Tensor):
+                image_features = image_features.pooler_output
+            batch_emb = image_features.cpu().numpy()
             all_embeddings.append(batch_emb)
             logger.info(
                 "Encoded batch %d-%d / %d",
