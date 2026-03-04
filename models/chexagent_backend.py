@@ -7,7 +7,7 @@ from typing import Optional
 
 import torch
 from PIL import Image
-from transformers import AutoModel, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoProcessor, GenerationConfig, BitsAndBytesConfig
 
 from app.config import settings
 from models.base import BaseModel, Diagnosis, DISEASE_LABELS
@@ -32,9 +32,13 @@ class CheXagentBackend(BaseModel):
         logger.info("Loading CheXagent model: %s", self.model_name)
         token = settings.hf_token or None
 
-        self.tokenizer = AutoTokenizer.from_pretrained(
+        self.processor = AutoProcessor.from_pretrained(
             self.model_name,
             trust_remote_code=True,
+            token=token,
+        )
+        self.generation_config = GenerationConfig.from_pretrained(
+            self.model_name,
             token=token,
         )
 
@@ -47,7 +51,7 @@ class CheXagentBackend(BaseModel):
                 bnb_4bit_use_double_quant=True,
             )
 
-        self.model = AutoModel.from_pretrained(
+        self.model = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
             device_map="auto" if self.device == "cuda" else None,
@@ -74,41 +78,26 @@ class CheXagentBackend(BaseModel):
         image = image.convert("RGB")
         prompt = build_diagnosis_prompt()
 
-        # CheXagent uses its own chat method via trust_remote_code.
-        try:
-            response = self.model.chat(
-                self.tokenizer,
-                image,
-                prompt,
-                max_new_tokens=256,
-                do_sample=True,
-                temperature=0.1,
-            )
-        except AttributeError:
-            # Fallback: use generate() with manual prompt formatting.
-            response = self._generate_fallback(image, prompt)
+        # CheXagent prompt format.
+        formatted = f" USER: <s>{prompt} ASSISTANT: <s>"
+        inputs = self.processor(
+            images=[image],
+            text=formatted,
+            return_tensors="pt",
+        ).to(
+            device=self.model.device,
+            dtype=torch.float16 if self.device == "cuda" else torch.float32,
+        )
+
+        output = self.model.generate(
+            **inputs,
+            generation_config=self.generation_config,
+            max_new_tokens=256,
+        )[0]
+        response = self.processor.tokenizer.decode(output, skip_special_tokens=True)
 
         logger.info("CheXagent raw output: %s", response[:200])
         return _parse_response(response)
-
-    def _generate_fallback(self, image: Image.Image, prompt: str) -> str:
-        """Fallback generation if model.chat() is unavailable."""
-        from transformers import AutoProcessor
-
-        processor = AutoProcessor.from_pretrained(
-            self.model_name, trust_remote_code=True,
-        )
-        formatted = f"USER: <s>{prompt} ASSISTANT: <s>"
-        inputs = processor(
-            text=formatted, images=image, return_tensors="pt",
-        ).to(self.model.device)
-
-        generated_ids = self.model.generate(
-            **inputs, max_new_tokens=256, temperature=0.1, do_sample=True,
-        )
-        input_len = inputs.get("input_ids", generated_ids).shape[1]
-        output_ids = generated_ids[:, input_len:]
-        return processor.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
 
 
 def _parse_response(text: str) -> list[Diagnosis]:
