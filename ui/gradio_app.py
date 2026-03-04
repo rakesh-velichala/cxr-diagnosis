@@ -46,6 +46,7 @@ def analyze_xray(image: Image.Image, model_choice: str) -> tuple[str, str]:
         "Qwen2.5-VL-7B": "qwen",
         "CheXagent-8b": "chexagent",
         "GPT-4o": "gpt4o",
+        "DenseNet-121 (XRV)": "densenet",
     }
     backend = backend_map.get(model_choice, "qwen")
 
@@ -100,7 +101,7 @@ def build_ui() -> gr.Blocks:
                     sources=["upload", "clipboard"],
                 )
                 model_selector = gr.Dropdown(
-                    choices=["Qwen2.5-VL-7B", "CheXagent-8b", "GPT-4o"],
+                    choices=["Qwen2.5-VL-7B", "CheXagent-8b", "GPT-4o", "DenseNet-121 (XRV)"],
                     value="Qwen2.5-VL-7B",
                     label="Model",
                 )

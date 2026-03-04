@@ -89,7 +89,10 @@ def load_model(backend: str) -> BaseModel:
     elif backend == "gpt4o":
         from models.gpt_backend import GPTBackend
         return GPTBackend()
+    elif backend == "densenet":
+        from models.densenet_backend import DenseNetBackend
+        return DenseNetBackend()
     else:
         raise ValueError(
-            f"Unknown backend '{backend}'. Choose from: qwen, chexagent, gpt4o"
+            f"Unknown backend '{backend}'. Choose from: qwen, chexagent, gpt4o, densenet"
         )
