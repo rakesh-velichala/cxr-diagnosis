@@ -29,6 +29,9 @@ google-cloud-storage>=2.14.0
 # Qwen2.5-VL dependencies
 qwen-vl-utils>=0.0.2
 
+# CheXagent dependency
+einops>=0.7.0
+
 # GPT-4o backend
 openai>=1.0.0
 
