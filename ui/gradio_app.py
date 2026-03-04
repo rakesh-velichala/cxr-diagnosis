@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 import gradio as gr
@@ -17,57 +16,62 @@ from utils.logging_config import logger
 # Globals
 # ---------------------------------------------------------------------------
 
-pipeline: Optional[DiagnosisPipeline] = None
+_pipelines: dict[str, DiagnosisPipeline] = {}
 
 
-def get_pipeline() -> DiagnosisPipeline:
-    """Lazy-load the diagnosis pipeline (loaded once on first call)."""
-    global pipeline  # noqa: PLW0603
-    if pipeline is None:
-        logger.info("Loading pipeline for Gradio UI …")
-        pipeline = DiagnosisPipeline()
-    return pipeline
+def get_pipeline(backend: str) -> DiagnosisPipeline:
+    """Lazy-load a pipeline for the given backend (cached per backend)."""
+    if backend not in _pipelines:
+        logger.info("Loading pipeline for backend: %s", backend)
+        _pipelines[backend] = DiagnosisPipeline(backend=backend)
+    return _pipelines[backend]
 
 
 # ---------------------------------------------------------------------------
 # Inference callback
 # ---------------------------------------------------------------------------
 
-def analyze_xray(image: Image.Image) -> tuple[str, str, str]:
+def analyze_xray(image: Image.Image, model_choice: str) -> tuple[str, str]:
     """Run the diagnosis pipeline and return results for the UI.
 
     Returns
     -------
-    tuple[str, str, str]
-        (diagnosis_report, similar_cases_json, disclaimer)
+    tuple[str, str]
+        (diagnosis_markdown, disclaimer)
     """
     if image is None:
-        return "Please upload a chest X-ray image.", "", ""
+        return "Please upload a chest X-ray image.", ""
+
+    backend_map = {
+        "Qwen2.5-VL-7B": "qwen",
+        "CheXagent-8b": "chexagent",
+        "GPT-4o": "gpt4o",
+    }
+    backend = backend_map.get(model_choice, "qwen")
 
     try:
-        pipe = get_pipeline()
+        pipe = get_pipeline(backend)
         result = pipe.diagnose(image)
-
-        cases_text = _format_similar_cases(result.similar_cases)
-        return result.report, cases_text, result.disclaimer
+        diagnosis_text = _format_diagnoses(result.diagnoses, result.model_name)
+        return diagnosis_text, result.disclaimer
     except Exception as exc:
         logger.exception("Gradio inference error")
-        return f"Error during analysis: {exc}", "", MEDICAL_DISCLAIMER
+        return f"Error during analysis: {exc}", MEDICAL_DISCLAIMER
 
 
-def _format_similar_cases(cases: list[dict]) -> str:
-    """Render similar cases as readable markdown."""
-    if not cases:
-        return "No similar cases found."
+def _format_diagnoses(diagnoses: list, model_name: str) -> str:
+    """Render diagnoses as readable markdown."""
+    lines = [f"### Diagnosis Results — *{model_name}*\n"]
 
-    lines = ["### Retrieved Similar Cases\n"]
-    for i, case in enumerate(cases, start=1):
-        findings = ", ".join(case["findings"]) if case["findings"] else "No Finding"
-        lines.append(
-            f"**Case {i}** — `{case['image_id']}` "
-            f"(similarity: {case['similarity']:.4f})\n"
-            f"  Findings: {findings}\n"
-        )
+    if not diagnoses:
+        lines.append("No diagnoses could be determined.")
+        return "\n".join(lines)
+
+    lines.append("| Rank | Disease | Confidence |")
+    lines.append("|------|---------|------------|")
+    for d in diagnoses:
+        lines.append(f"| {d.rank} | **{d.disease}** | {d.confidence} |")
+
     return "\n".join(lines)
 
 
@@ -84,7 +88,7 @@ def build_ui() -> gr.Blocks:
         gr.Markdown(
             "# Chest X-Ray Diagnosis Assistant\n"
             "Upload a chest X-ray image for AI-assisted diagnostic analysis "
-            "powered by Vision-Language Models with retrieval-augmented generation.\n\n"
+            "powered by Vision-Language Models.\n\n"
             f"> {MEDICAL_DISCLAIMER}"
         )
 
@@ -95,11 +99,15 @@ def build_ui() -> gr.Blocks:
                     label="Upload Chest X-Ray",
                     sources=["upload", "clipboard"],
                 )
+                model_selector = gr.Dropdown(
+                    choices=["Qwen2.5-VL-7B", "CheXagent-8b", "GPT-4o"],
+                    value="Qwen2.5-VL-7B",
+                    label="Model",
+                )
                 analyze_btn = gr.Button("Analyze", variant="primary", size="lg")
 
             with gr.Column(scale=2):
                 report_output = gr.Markdown(label="Diagnosis Report")
-                cases_output = gr.Markdown(label="Similar Cases")
                 disclaimer_output = gr.Textbox(
                     label="Disclaimer",
                     interactive=False,
@@ -108,15 +116,8 @@ def build_ui() -> gr.Blocks:
 
         analyze_btn.click(
             fn=analyze_xray,
-            inputs=[image_input],
-            outputs=[report_output, cases_output, disclaimer_output],
-        )
-
-        # Also trigger on image upload.
-        image_input.change(
-            fn=analyze_xray,
-            inputs=[image_input],
-            outputs=[report_output, cases_output, disclaimer_output],
+            inputs=[image_input, model_selector],
+            outputs=[report_output, disclaimer_output],
         )
 
     return demo

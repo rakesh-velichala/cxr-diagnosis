@@ -1,8 +1,8 @@
-"""Structured prompt construction for radiology VLM inference."""
+"""Structured prompt construction for VLM-based chest X-ray diagnosis."""
 
 from __future__ import annotations
 
-from data.retriever import RetrievedCase
+from models.base import DISEASE_LABELS
 
 MEDICAL_DISCLAIMER = (
     "DISCLAIMER: This analysis is for educational and research purposes only. "
@@ -11,66 +11,42 @@ MEDICAL_DISCLAIMER = (
     "decisions."
 )
 
-SYSTEM_INSTRUCTION = (
-    "You are a board-certified radiologist AI assistant specializing in "
-    "chest X-ray interpretation. Analyze the provided chest X-ray image "
-    "and give a structured diagnostic report.\n\n"
-    "Your report must include:\n"
-    "1. **Findings**: Describe observable abnormalities or normal anatomy.\n"
-    "2. **Diagnosis**: List the most likely diagnoses based on the image.\n"
-    "3. **Confidence**: For each diagnosis, indicate your confidence level "
-    "(High / Moderate / Low) and briefly explain why.\n"
-    "4. **Recommendations**: Suggest follow-up imaging or clinical actions "
-    "if appropriate.\n\n"
-    f"{MEDICAL_DISCLAIMER}"
-)
+_DISEASE_LIST = "\n".join(f"  - {label}" for label in DISEASE_LABELS)
+
+_DIAGNOSIS_PROMPT = f"""You are a board-certified radiologist AI assistant specializing in chest X-ray interpretation.
+
+Analyze the provided chest X-ray image and identify the most likely diagnosis.
+
+**Valid diagnoses** (choose ONLY from this list):
+{_DISEASE_LIST}
+
+**Instructions:**
+1. Examine the chest X-ray carefully.
+2. Select the 1-2 most likely diagnoses from the valid list above.
+3. For each diagnosis, assign a confidence level: "High", "Moderate", or "Low".
+4. Order diagnoses by descending probability (most likely first).
+5. If the X-ray appears normal, use "No Finding".
+
+**Output format — respond with ONLY this JSON, no other text:**
+```json
+{{
+  "diagnoses": [
+    {{"disease": "<disease name from list>", "confidence": "<High|Moderate|Low>"}},
+    {{"disease": "<disease name from list>", "confidence": "<High|Moderate|Low>"}}
+  ]
+}}
+```
+
+Respond with the JSON only. Do not include any explanation, findings, or recommendations."""
 
 
-def _format_similar_case(case: RetrievedCase, index: int) -> str:
-    """Format a single retrieved case as a few-shot example line."""
-    findings = case.positive_findings
-    if not findings:
-        findings_str = "No Finding"
-    else:
-        findings_str = ", ".join(findings)
-    return (
-        f"  Similar Case {index}: "
-        f"Image={case.image_id}, "
-        f"Similarity={case.similarity:.3f}, "
-        f"Diagnosis=[{findings_str}]"
-    )
-
-
-def build_prompt(similar_cases: list[RetrievedCase]) -> str:
-    """Build the full prompt for VLM inference.
-
-    Parameters
-    ----------
-    similar_cases : list[RetrievedCase]
-        Top-k retrieved cases from the dataset.
+def build_diagnosis_prompt() -> str:
+    """Return the structured diagnosis prompt for VLM inference.
 
     Returns
     -------
     str
-        Fully assembled prompt string.
+        Prompt string that instructs the VLM to return JSON with
+        1-2 diagnoses from the canonical 20-label set.
     """
-    sections: list[str] = [SYSTEM_INSTRUCTION, ""]
-
-    # Few-shot context from retrieved similar cases.
-    if similar_cases:
-        sections.append(
-            "The following similar cases were found in the reference dataset "
-            "based on image embedding similarity. Use them as supporting "
-            "context (not as the sole basis) for your analysis:"
-        )
-        for i, case in enumerate(similar_cases, start=1):
-            sections.append(_format_similar_case(case, i))
-        sections.append("")
-
-    # User instruction.
-    sections.append(
-        "Now analyze the attached chest X-ray image. Provide your "
-        "structured diagnostic report following the format above."
-    )
-
-    return "\n".join(sections)
+    return _DIAGNOSIS_PROMPT

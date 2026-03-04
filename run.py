@@ -36,7 +36,10 @@ def start_ui() -> None:
     from app.config import settings
     from ui.gradio_app import build_ui
 
-    logger.info("Starting Gradio UI on %s:%d", settings.api_host, settings.ui_port)
+    logger.info(
+        "Starting Gradio UI on %s:%d (backend=%s)",
+        settings.api_host, settings.ui_port, settings.model_backend,
+    )
     demo = build_ui()
     demo.launch(
         server_name=settings.api_host,

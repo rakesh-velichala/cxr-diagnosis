@@ -6,7 +6,7 @@ import io
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
@@ -15,22 +15,28 @@ from app.pipeline import DiagnosisPipeline
 from utils.logging_config import logger
 
 # ---------------------------------------------------------------------------
-# Application lifespan — load models once at startup
+# Application lifespan — load default model once at startup
 # ---------------------------------------------------------------------------
 
-pipeline: DiagnosisPipeline | None = None
+_pipelines: dict[str, DiagnosisPipeline] = {}
+
+
+def _get_pipeline(backend: str) -> DiagnosisPipeline:
+    """Get or create a pipeline for the given backend."""
+    if backend not in _pipelines:
+        _pipelines[backend] = DiagnosisPipeline(backend=backend)
+    return _pipelines[backend]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load the diagnosis pipeline on startup; release on shutdown."""
-    global pipeline  # noqa: PLW0603
-    logger.info("Starting up — loading models …")
-    pipeline = DiagnosisPipeline()
+    """Load the default pipeline on startup; release on shutdown."""
+    logger.info("Starting up — loading default model (%s)", settings.model_backend)
+    _get_pipeline(settings.model_backend)
     logger.info("Models loaded — server ready")
     yield
     logger.info("Shutting down")
-    pipeline = None
+    _pipelines.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -40,10 +46,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CXR Diagnosis API",
     description=(
-        "Chest X-Ray diagnosis using Vision-Language Models with "
-        "retrieval-augmented generation. For educational use only."
+        "Chest X-Ray diagnosis using Vision-Language Models. "
+        "For educational use only."
     ),
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -66,23 +72,26 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)) -> dict[str, Any]:
+async def predict(
+    file: UploadFile = File(...),
+    model: str = Query(default=None, description="Backend: qwen, chexagent, gpt4o"),
+) -> dict[str, Any]:
     """Analyze an uploaded chest X-ray image.
 
     Parameters
     ----------
     file : UploadFile
         The chest X-ray image (PNG, JPEG).
+    model : str, optional
+        Model backend to use. Defaults to CXR_MODEL_BACKEND env var.
 
     Returns
     -------
     dict
-        JSON response with ``report``, ``similar_cases``, and ``disclaimer``.
+        JSON response with ``diagnoses``, ``model``, and ``disclaimer``.
     """
-    if pipeline is None:
-        raise HTTPException(status_code=503, detail="Model not loaded yet")
+    backend = model or settings.model_backend
 
-    # Validate content type.
     if file.content_type and not file.content_type.startswith("image/"):
         raise HTTPException(
             status_code=400,
@@ -98,7 +107,8 @@ async def predict(file: UploadFile = File(...)) -> dict[str, Any]:
         ) from exc
 
     try:
-        result = pipeline.diagnose(image)
+        pipe = _get_pipeline(backend)
+        result = pipe.diagnose(image)
     except Exception as exc:
         logger.exception("Diagnosis pipeline failed")
         raise HTTPException(
@@ -106,8 +116,11 @@ async def predict(file: UploadFile = File(...)) -> dict[str, Any]:
         ) from exc
 
     return {
-        "report": result.report,
-        "similar_cases": result.similar_cases,
+        "diagnoses": [
+            {"disease": d.disease, "confidence": d.confidence, "rank": d.rank}
+            for d in result.diagnoses
+        ],
+        "model": result.model_name,
         "disclaimer": result.disclaimer,
     }
 

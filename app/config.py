@@ -31,7 +31,28 @@ class AppConfig:
         )
     )
 
-    # ── Models ─────────────────────────────────────────────────────────
+    # ── Model backend ─────────────────────────────────────────────────
+    model_backend: str = field(
+        default_factory=lambda: os.getenv("CXR_MODEL_BACKEND", "qwen")
+    )
+    qwen_model_name: str = field(
+        default_factory=lambda: os.getenv(
+            "CXR_QWEN_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"
+        )
+    )
+    chexagent_model_name: str = field(
+        default_factory=lambda: os.getenv(
+            "CXR_CHEXAGENT_MODEL", "StanfordAIMI/CheXagent-8b"
+        )
+    )
+    openai_api_key: str = field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY", "")
+    )
+    openai_model: str = field(
+        default_factory=lambda: os.getenv("CXR_OPENAI_MODEL", "gpt-4o")
+    )
+
+    # ── Legacy model names (kept for embedding scripts) ───────────────
     clip_model_name: str = field(
         default_factory=lambda: os.getenv(
             "CXR_CLIP_MODEL", "openai/clip-vit-base-patch32"
@@ -42,6 +63,7 @@ class AppConfig:
             "CXR_VLM_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"
         )
     )
+
     hf_token: str = field(
         default_factory=lambda: os.getenv("HF_TOKEN", "")
     )
@@ -49,7 +71,7 @@ class AppConfig:
         default_factory=lambda: os.getenv("CXR_DEVICE", "cuda")
     )
 
-    # ── Retrieval ──────────────────────────────────────────────────────
+    # ── Retrieval (kept for embedding scripts) ────────────────────────
     top_k: int = field(
         default_factory=lambda: int(os.getenv("CXR_TOP_K", "5"))
     )
@@ -68,8 +90,6 @@ class AppConfig:
     # ── CSV schema ─────────────────────────────────────────────────────
     image_col: str = "id"
     subject_col: str = "subject_id"
-    # Disease columns are auto-detected at runtime (all columns except
-    # image_col and subject_col).
 
     def __post_init__(self) -> None:
         self.data_dir = self.project_root / "data"

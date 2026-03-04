@@ -37,3 +37,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Google Cloud SDK (installed locally)
+google-cloud-sdk/
+
+# Evaluation results (generated)
+evaluation/results/
+
+# Fine-tuned model checkpoints
+models/checkpoints/
