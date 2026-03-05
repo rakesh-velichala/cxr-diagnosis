@@ -1,4 +1,4 @@
-"""Fine-tune DenseNet-121 (TorchXRayVision) on the full 20-label CXR dataset.
+"""Fine-tune DenseNet-121 (TorchXRayVision) on the 19-label CXR dataset.
 
 Usage
 -----
@@ -34,12 +34,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import settings
 from utils.logging_config import logger
 
-# The 20 target labels in fixed order.
+# The 19 target labels in fixed order (Pneumomediastinum dropped — only 5 train samples).
 TARGET_LABELS = [
     "Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Effusion",
     "Emphysema", "Fibrosis", "Hernia", "Infiltration", "Mass",
     "Nodule", "Pleural_Thickening", "Pneumonia", "Pneumothorax",
-    "Pneumoperitoneum", "Pneumomediastinum", "Subcutaneous Emphysema",
+    "Pneumoperitoneum", "Subcutaneous Emphysema",
     "Tortuous Aorta", "Calcification of the Aorta", "No Finding",
 ]
 
@@ -62,6 +62,13 @@ class CXRDataset(Dataset):
         before = len(self.df)
         self.df = self.df[self.df["id"].apply(lambda x: x in self.image_lookup)].reset_index(drop=True)
         logger.info("Dataset: %d/%d images available", len(self.df), before)
+
+        # Drop rows where Pneumomediastinum is the label (too few samples).
+        if "Pneumomediastinum" in self.df.columns:
+            dropped = self.df["Pneumomediastinum"].sum()
+            self.df = self.df[self.df["Pneumomediastinum"] != 1].reset_index(drop=True)
+            if dropped > 0:
+                logger.info("Dropped %d Pneumomediastinum rows", int(dropped))
 
         # Extract labels as numpy array.
         self.labels = self.df[TARGET_LABELS].values.astype(np.float32)
@@ -107,7 +114,7 @@ class CXRDataset(Dataset):
 
 
 class FineTunedDenseNet(nn.Module):
-    """DenseNet-121 with a new 20-class classification head."""
+    """DenseNet-121 with a new 19-class classification head."""
 
     def __init__(self) -> None:
         super().__init__()
