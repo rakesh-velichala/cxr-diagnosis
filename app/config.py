@@ -33,7 +33,7 @@ class AppConfig:
 
     # ── Model backend ─────────────────────────────────────────────────
     model_backend: str = field(
-        default_factory=lambda: os.getenv("CXR_MODEL_BACKEND", "qwen")
+        default_factory=lambda: os.getenv("CXR_MODEL_BACKEND", "densenet")
     )
     qwen_model_name: str = field(
         default_factory=lambda: os.getenv(

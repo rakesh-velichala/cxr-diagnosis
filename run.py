@@ -33,8 +33,9 @@ def start_api() -> None:
 
 def start_ui() -> None:
     """Start the Gradio UI (loads the pipeline directly)."""
+    import gradio as gr
     from app.config import settings
-    from ui.gradio_app import build_ui
+    from ui.gradio_app import build_ui, _CUSTOM_CSS
 
     logger.info(
         "Starting Gradio UI on %s:%d (backend=%s)",
@@ -45,6 +46,8 @@ def start_ui() -> None:
         server_name=settings.api_host,
         server_port=settings.ui_port,
         share=False,
+        theme=gr.themes.Soft(),
+        css=_CUSTOM_CSS,
     )
 
 

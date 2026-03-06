@@ -109,62 +109,44 @@ def _format_report(diagnoses: list[Diagnosis], model_name: str) -> str:
     lines: list[str] = []
 
     if not diagnoses:
-        lines.append('<div class="no-findings">')
         lines.append("### No diagnoses could be determined.")
-        lines.append("</div>")
         return "\n".join(lines)
 
     # Check if it's a "No Finding" result.
     is_normal = len(diagnoses) == 1 and diagnoses[0].disease == "No Finding"
 
     if is_normal:
-        # Normal result.
-        lines.append('<div class="no-findings">')
-        lines.append("")
-        lines.append("### No Significant Findings Detected")
+        lines.append("### ✅ No Significant Findings Detected")
         lines.append("")
         lines.append("All 11 conditions screened were below their detection thresholds.")
-        lines.append("")
-        lines.append("</div>")
     else:
-        # Findings detected.
         n = len(diagnoses)
-        lines.append('<div class="findings-detected">')
-        lines.append("")
-        lines.append(f"### {n} Finding{'s' if n > 1 else ''} Detected")
+        lines.append(f"### ⚠️ {n} Finding{'s' if n > 1 else ''} Detected")
         lines.append("")
         lines.append("| Disease | Probability | Confidence |")
         lines.append("|---------|-------------|------------|")
         for d in diagnoses:
             display = _DISPLAY_NAMES.get(d.disease, d.disease)
             pct = f"{d.probability * 100:.1f}%"
-            conf_class = "confidence-high" if d.confidence == "High" else "confidence-moderate"
-            conf_badge = f'<span class="{conf_class}">{d.confidence}</span>'
-            lines.append(f"| **{display}** | {pct} | {conf_badge} |")
-        lines.append("")
-        lines.append("</div>")
+            lines.append(f"| **{display}** | {pct} | {d.confidence} |")
 
     # Screening summary — show all 11 diseases.
     detected_set = {d.disease for d in diagnoses if d.disease != "No Finding"}
 
     lines.append("")
-    lines.append('<div class="screening-summary">')
+    lines.append("---")
     lines.append("")
     lines.append("**Screening Summary** — 11 conditions evaluated")
     lines.append("")
-    summary_parts: list[str] = []
     for label in _SCORED_LABELS:
         display = _DISPLAY_NAMES.get(label, label)
         if label in detected_set:
-            # Find the diagnosis to get probability.
             d = next((x for x in diagnoses if x.disease == label), None)
             pct = f"{d.probability * 100:.1f}%" if d else ""
-            summary_parts.append(f"- **{display}** — {pct} (detected)")
+            lines.append(f"- ⚠️ **{display}** — {pct}")
         else:
-            summary_parts.append(f"- {display} — normal")
-    lines.append("\n".join(summary_parts))
-    lines.append("")
-    lines.append("</div>")
+            lines.append(f"- ✅ {display} — normal")
+
     lines.append("")
     lines.append(f"*Model: {model_name}*")
 
@@ -179,17 +161,13 @@ def build_ui() -> gr.Blocks:
     """Construct the Gradio Blocks interface."""
     with gr.Blocks(
         title="Chest X-Ray Diagnosis",
-        theme=gr.themes.Soft(),
-        css=_CUSTOM_CSS,
     ) as demo:
 
         # Header.
         gr.Markdown(
-            '<div class="app-header">\n\n'
             "# Chest X-Ray Diagnosis Assistant\n\n"
             "AI-powered multi-label screening using a pretrained DenseNet-121 model "
-            "with calibrated per-disease thresholds.\n\n"
-            "</div>"
+            "with calibrated per-disease thresholds."
         )
 
         with gr.Row():
@@ -238,6 +216,8 @@ def main() -> None:
         server_name=settings.api_host,
         server_port=settings.ui_port,
         share=False,
+        theme=gr.themes.Soft(),
+        css=_CUSTOM_CSS,
     )
 
 
