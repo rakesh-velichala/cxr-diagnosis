@@ -23,17 +23,11 @@ _SCORED_LABELS = [l for l in DISEASE_LABELS if l != "No Finding"]
 
 # Display-friendly names for diseases.
 _DISPLAY_NAMES = {
-    "Atelectasis": "Atelectasis",
     "Cardiomegaly": "Cardiomegaly",
     "Consolidation": "Consolidation",
     "Edema": "Edema",
     "Effusion": "Pleural Effusion",
-    "Fibrosis": "Fibrosis",
-    "Infiltration": "Infiltration",
     "Mass": "Mass",
-    "Nodule": "Nodule",
-    "Pleural_Thickening": "Pleural Thickening",
-    "Pneumothorax": "Pneumothorax",
 }
 
 # Custom CSS for a polished medical-app look.
@@ -116,9 +110,9 @@ def _format_report(diagnoses: list[Diagnosis], model_name: str) -> str:
     is_normal = len(diagnoses) == 1 and diagnoses[0].disease == "No Finding"
 
     if is_normal:
-        lines.append("### No Significant Findings Detected")
+        lines.append("### No Findings Detected")
         lines.append("")
-        lines.append("All 11 conditions screened were below their detection thresholds.")
+        lines.append("All 5 conditions screened were below their detection thresholds.")
     else:
         n = len(diagnoses)
         lines.append(f"### {n} Possible Finding{'s' if n > 1 else ''} Detected")
@@ -151,9 +145,8 @@ def build_ui() -> gr.Blocks:
             "# Chest X-Ray Diagnosis Assistant\n\n"
             "AI-powered multi-label screening using a pretrained DenseNet-121 model "
             "with calibrated per-disease thresholds.\n\n"
-            "**Screens for 11 conditions:** "
-            "Atelectasis, Cardiomegaly, Consolidation, Edema, Pleural Effusion, "
-            "Fibrosis, Infiltration, Mass, Nodule, Pleural Thickening, Pneumothorax."
+            "**Screens for 5 conditions:** "
+            "Cardiomegaly, Consolidation, Edema, Pleural Effusion, Mass."
         )
 
         with gr.Row():

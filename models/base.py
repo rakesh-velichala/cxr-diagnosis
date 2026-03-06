@@ -9,18 +9,13 @@ from typing import Optional
 from PIL import Image
 
 # Disease labels supported by the DenseNet model with calibrated thresholds.
+# Filtered to 5 diseases with AUC >= 0.75 and specificity >= 60%.
 DISEASE_LABELS: list[str] = [
-    "Atelectasis",
     "Cardiomegaly",
     "Consolidation",
     "Edema",
     "Effusion",
-    "Fibrosis",
-    "Infiltration",
     "Mass",
-    "Nodule",
-    "Pleural_Thickening",
-    "Pneumothorax",
     "No Finding",
 ]
 
