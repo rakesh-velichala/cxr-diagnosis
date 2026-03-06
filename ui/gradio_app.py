@@ -116,12 +116,12 @@ def _format_report(diagnoses: list[Diagnosis], model_name: str) -> str:
     is_normal = len(diagnoses) == 1 and diagnoses[0].disease == "No Finding"
 
     if is_normal:
-        lines.append("### ✅ No Significant Findings Detected")
+        lines.append("### No Significant Findings Detected")
         lines.append("")
         lines.append("All 11 conditions screened were below their detection thresholds.")
     else:
         n = len(diagnoses)
-        lines.append(f"### ⚠️ {n} Finding{'s' if n > 1 else ''} Detected")
+        lines.append(f"### {n} Possible Finding{'s' if n > 1 else ''} Detected")
         lines.append("")
         lines.append("| Disease | Probability | Confidence |")
         lines.append("|---------|-------------|------------|")
@@ -129,23 +129,6 @@ def _format_report(diagnoses: list[Diagnosis], model_name: str) -> str:
             display = _DISPLAY_NAMES.get(d.disease, d.disease)
             pct = f"{d.probability * 100:.1f}%"
             lines.append(f"| **{display}** | {pct} | {d.confidence} |")
-
-    # Screening summary — show all 11 diseases.
-    detected_set = {d.disease for d in diagnoses if d.disease != "No Finding"}
-
-    lines.append("")
-    lines.append("---")
-    lines.append("")
-    lines.append("**Screening Summary** — 11 conditions evaluated")
-    lines.append("")
-    for label in _SCORED_LABELS:
-        display = _DISPLAY_NAMES.get(label, label)
-        if label in detected_set:
-            d = next((x for x in diagnoses if x.disease == label), None)
-            pct = f"{d.probability * 100:.1f}%" if d else ""
-            lines.append(f"- ⚠️ **{display}** — {pct}")
-        else:
-            lines.append(f"- ✅ {display} — normal")
 
     lines.append("")
     lines.append(f"*Model: {model_name}*")
