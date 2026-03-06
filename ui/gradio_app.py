@@ -24,10 +24,8 @@ _SCORED_LABELS = [l for l in DISEASE_LABELS if l != "No Finding"]
 # Display-friendly names for diseases.
 _DISPLAY_NAMES = {
     "Cardiomegaly": "Cardiomegaly",
-    "Consolidation": "Consolidation",
     "Edema": "Edema",
     "Effusion": "Pleural Effusion",
-    "Mass": "Mass",
 }
 
 # Custom CSS for a polished medical-app look.
@@ -112,7 +110,7 @@ def _format_report(diagnoses: list[Diagnosis], model_name: str) -> str:
     if is_normal:
         lines.append("### No Findings Detected")
         lines.append("")
-        lines.append("All 5 conditions screened were below their detection thresholds.")
+        lines.append("All 3 conditions screened were below their detection thresholds.")
     else:
         n = len(diagnoses)
         lines.append(f"### {n} Possible Finding{'s' if n > 1 else ''} Detected")
@@ -145,8 +143,8 @@ def build_ui() -> gr.Blocks:
             "# Chest X-Ray Diagnosis Assistant\n\n"
             "AI-powered multi-label screening using a pretrained DenseNet-121 model "
             "with calibrated per-disease thresholds.\n\n"
-            "**Screens for 5 conditions:** "
-            "Cardiomegaly, Consolidation, Edema, Pleural Effusion, Mass."
+            "**Screens for 3 conditions:** "
+            "Cardiomegaly, Edema, Pleural Effusion."
         )
 
         with gr.Row():
