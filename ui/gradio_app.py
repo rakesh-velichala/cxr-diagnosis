@@ -150,7 +150,10 @@ def build_ui() -> gr.Blocks:
         gr.Markdown(
             "# Chest X-Ray Diagnosis Assistant\n\n"
             "AI-powered multi-label screening using a pretrained DenseNet-121 model "
-            "with calibrated per-disease thresholds."
+            "with calibrated per-disease thresholds.\n\n"
+            "**Screens for 11 conditions:** "
+            "Atelectasis, Cardiomegaly, Consolidation, Edema, Pleural Effusion, "
+            "Fibrosis, Infiltration, Mass, Nodule, Pleural Thickening, Pneumothorax."
         )
 
         with gr.Row():
