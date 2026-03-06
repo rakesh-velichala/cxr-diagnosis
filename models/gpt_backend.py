@@ -97,7 +97,7 @@ def _parse_response(text: str) -> list[Diagnosis]:
             disease = item.get("disease", "").strip()
             confidence = item.get("confidence", "Moderate").strip()
             if disease:
-                results.append(Diagnosis(disease=disease, confidence=confidence, rank=i + 1))
+                results.append(Diagnosis(disease=disease, probability=0.0, confidence=confidence))
         if results:
             return results
     except (json.JSONDecodeError, AttributeError, TypeError):
@@ -113,7 +113,7 @@ def _parse_response(text: str) -> list[Diagnosis]:
                 conf = "High"
             elif "low" in text_lower:
                 conf = "Low"
-            found.append(Diagnosis(disease=label, confidence=conf, rank=len(found) + 1))
+            found.append(Diagnosis(disease=label, probability=0.0, confidence=conf))
             if len(found) >= 2:
                 break
 
@@ -121,6 +121,6 @@ def _parse_response(text: str) -> list[Diagnosis]:
         matches = get_close_matches(text_lower, [l.lower() for l in DISEASE_LABELS], n=1, cutoff=0.4)
         if matches:
             idx = [l.lower() for l in DISEASE_LABELS].index(matches[0])
-            found.append(Diagnosis(disease=DISEASE_LABELS[idx], confidence="Low", rank=1))
+            found.append(Diagnosis(disease=DISEASE_LABELS[idx], probability=0.0, confidence="Low"))
 
-    return found or [Diagnosis(disease="No Finding", confidence="Low", rank=1)]
+    return found or [Diagnosis(disease="No Finding", probability=0.0, confidence="Low")]

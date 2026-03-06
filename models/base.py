@@ -8,38 +8,31 @@ from typing import Optional
 
 from PIL import Image
 
-# All valid disease labels from the NIH CXR dataset.
+# Disease labels supported by the DenseNet model with calibrated thresholds.
 DISEASE_LABELS: list[str] = [
     "Atelectasis",
     "Cardiomegaly",
     "Consolidation",
     "Edema",
     "Effusion",
-    "Emphysema",
     "Fibrosis",
-    "Hernia",
     "Infiltration",
     "Mass",
     "Nodule",
     "Pleural_Thickening",
-    "Pneumonia",
     "Pneumothorax",
-    "Pneumoperitoneum",
-    "Pneumomediastinum",
-    "Subcutaneous Emphysema",
-    "Tortuous Aorta",
-    "Calcification of the Aorta",
     "No Finding",
 ]
 
 
 @dataclass
 class Diagnosis:
-    """A single predicted diagnosis."""
+    """A single predicted finding from the multi-label classifier."""
 
     disease: str
+    probability: float  # Raw sigmoid probability (0.0 – 1.0)
     confidence: str  # "High", "Moderate", or "Low"
-    rank: int  # 1 = most likely, 2 = second most likely
+    threshold: float = 0.0  # Per-class threshold used for this disease
 
 
 class BaseModel(ABC):

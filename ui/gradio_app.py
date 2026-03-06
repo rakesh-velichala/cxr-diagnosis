@@ -9,6 +9,7 @@ from PIL import Image
 
 from app.config import settings
 from app.pipeline import DiagnosisPipeline
+from models.base import Diagnosis, DISEASE_LABELS
 from prompts.prompt_builder import MEDICAL_DISCLAIMER
 from utils.logging_config import logger
 
@@ -17,6 +18,64 @@ from utils.logging_config import logger
 # ---------------------------------------------------------------------------
 
 _pipelines: dict[str, DiagnosisPipeline] = {}
+
+_SCORED_LABELS = [l for l in DISEASE_LABELS if l != "No Finding"]
+
+# Display-friendly names for diseases.
+_DISPLAY_NAMES = {
+    "Atelectasis": "Atelectasis",
+    "Cardiomegaly": "Cardiomegaly",
+    "Consolidation": "Consolidation",
+    "Edema": "Edema",
+    "Effusion": "Pleural Effusion",
+    "Fibrosis": "Fibrosis",
+    "Infiltration": "Infiltration",
+    "Mass": "Mass",
+    "Nodule": "Nodule",
+    "Pleural_Thickening": "Pleural Thickening",
+    "Pneumothorax": "Pneumothorax",
+}
+
+# Custom CSS for a polished medical-app look.
+_CUSTOM_CSS = """
+.findings-detected {
+    background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
+    border-left: 4px solid #e53e3e;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+.no-findings {
+    background: linear-gradient(135deg, #f0fff4 0%, #fff 100%);
+    border-left: 4px solid #38a169;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+.screening-summary {
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 8px;
+}
+.app-header {
+    text-align: center;
+    padding: 8px 0 16px 0;
+}
+.app-header h1 {
+    color: #2b6cb0;
+    margin-bottom: 4px;
+}
+.confidence-high {
+    color: #e53e3e;
+    font-weight: 600;
+}
+.confidence-moderate {
+    color: #dd6b20;
+    font-weight: 600;
+}
+"""
 
 
 def get_pipeline(backend: str) -> DiagnosisPipeline:
@@ -31,47 +90,83 @@ def get_pipeline(backend: str) -> DiagnosisPipeline:
 # Inference callback
 # ---------------------------------------------------------------------------
 
-def analyze_xray(image: Image.Image, model_choice: str) -> tuple[str, str]:
-    """Run the diagnosis pipeline and return results for the UI.
-
-    Returns
-    -------
-    tuple[str, str]
-        (diagnosis_markdown, disclaimer)
-    """
+def analyze_xray(image: Image.Image) -> str:
+    """Run the diagnosis pipeline and return formatted results."""
     if image is None:
-        return "Please upload a chest X-ray image.", ""
-
-    backend_map = {
-        "Qwen2.5-VL-7B": "qwen",
-        "CheXagent-8b": "chexagent",
-        "GPT-4o": "gpt4o",
-        "DenseNet-121 (XRV)": "densenet",
-    }
-    backend = backend_map.get(model_choice, "qwen")
+        return "**Please upload a chest X-ray image.**"
 
     try:
-        pipe = get_pipeline(backend)
+        pipe = get_pipeline("densenet")
         result = pipe.diagnose(image)
-        diagnosis_text = _format_diagnoses(result.diagnoses, result.model_name)
-        return diagnosis_text, result.disclaimer
+        return _format_report(result.diagnoses, result.model_name)
     except Exception as exc:
         logger.exception("Gradio inference error")
-        return f"Error during analysis: {exc}", MEDICAL_DISCLAIMER
+        return f"**Error during analysis:** {exc}"
 
 
-def _format_diagnoses(diagnoses: list, model_name: str) -> str:
-    """Render diagnoses as readable markdown."""
-    lines = [f"### Diagnosis Results — *{model_name}*\n"]
+def _format_report(diagnoses: list[Diagnosis], model_name: str) -> str:
+    """Render multi-label results as a polished markdown report."""
+    lines: list[str] = []
 
     if not diagnoses:
-        lines.append("No diagnoses could be determined.")
+        lines.append('<div class="no-findings">')
+        lines.append("### No diagnoses could be determined.")
+        lines.append("</div>")
         return "\n".join(lines)
 
-    lines.append("| Rank | Disease | Confidence |")
-    lines.append("|------|---------|------------|")
-    for d in diagnoses:
-        lines.append(f"| {d.rank} | **{d.disease}** | {d.confidence} |")
+    # Check if it's a "No Finding" result.
+    is_normal = len(diagnoses) == 1 and diagnoses[0].disease == "No Finding"
+
+    if is_normal:
+        # Normal result.
+        lines.append('<div class="no-findings">')
+        lines.append("")
+        lines.append("### No Significant Findings Detected")
+        lines.append("")
+        lines.append("All 11 conditions screened were below their detection thresholds.")
+        lines.append("")
+        lines.append("</div>")
+    else:
+        # Findings detected.
+        n = len(diagnoses)
+        lines.append('<div class="findings-detected">')
+        lines.append("")
+        lines.append(f"### {n} Finding{'s' if n > 1 else ''} Detected")
+        lines.append("")
+        lines.append("| Disease | Probability | Confidence |")
+        lines.append("|---------|-------------|------------|")
+        for d in diagnoses:
+            display = _DISPLAY_NAMES.get(d.disease, d.disease)
+            pct = f"{d.probability * 100:.1f}%"
+            conf_class = "confidence-high" if d.confidence == "High" else "confidence-moderate"
+            conf_badge = f'<span class="{conf_class}">{d.confidence}</span>'
+            lines.append(f"| **{display}** | {pct} | {conf_badge} |")
+        lines.append("")
+        lines.append("</div>")
+
+    # Screening summary — show all 11 diseases.
+    detected_set = {d.disease for d in diagnoses if d.disease != "No Finding"}
+
+    lines.append("")
+    lines.append('<div class="screening-summary">')
+    lines.append("")
+    lines.append("**Screening Summary** — 11 conditions evaluated")
+    lines.append("")
+    summary_parts: list[str] = []
+    for label in _SCORED_LABELS:
+        display = _DISPLAY_NAMES.get(label, label)
+        if label in detected_set:
+            # Find the diagnosis to get probability.
+            d = next((x for x in diagnoses if x.disease == label), None)
+            pct = f"{d.probability * 100:.1f}%" if d else ""
+            summary_parts.append(f"- **{display}** — {pct} (detected)")
+        else:
+            summary_parts.append(f"- {display} — normal")
+    lines.append("\n".join(summary_parts))
+    lines.append("")
+    lines.append("</div>")
+    lines.append("")
+    lines.append(f"*Model: {model_name}*")
 
     return "\n".join(lines)
 
@@ -85,40 +180,48 @@ def build_ui() -> gr.Blocks:
     with gr.Blocks(
         title="Chest X-Ray Diagnosis",
         theme=gr.themes.Soft(),
+        css=_CUSTOM_CSS,
     ) as demo:
+
+        # Header.
         gr.Markdown(
-            "# Chest X-Ray Diagnosis Assistant\n"
-            "Upload a chest X-ray image for AI-assisted diagnostic analysis "
-            "powered by Vision-Language Models.\n\n"
-            f"> {MEDICAL_DISCLAIMER}"
+            '<div class="app-header">\n\n'
+            "# Chest X-Ray Diagnosis Assistant\n\n"
+            "AI-powered multi-label screening using a pretrained DenseNet-121 model "
+            "with calibrated per-disease thresholds.\n\n"
+            "</div>"
         )
 
         with gr.Row():
+            # Left column: inputs.
             with gr.Column(scale=1):
                 image_input = gr.Image(
                     type="pil",
                     label="Upload Chest X-Ray",
                     sources=["upload", "clipboard"],
+                    height=380,
                 )
-                model_selector = gr.Dropdown(
-                    choices=["Qwen2.5-VL-7B", "CheXagent-8b", "GPT-4o", "DenseNet-121 (XRV)"],
-                    value="Qwen2.5-VL-7B",
-                    label="Model",
+                analyze_btn = gr.Button(
+                    "Analyze X-Ray",
+                    variant="primary",
+                    size="lg",
                 )
-                analyze_btn = gr.Button("Analyze", variant="primary", size="lg")
 
+            # Right column: results.
             with gr.Column(scale=2):
-                report_output = gr.Markdown(label="Diagnosis Report")
-                disclaimer_output = gr.Textbox(
-                    label="Disclaimer",
-                    interactive=False,
-                    lines=3,
+                report_output = gr.Markdown(
+                    value="Upload an image and click **Analyze X-Ray** to begin.",
+                    label="Analysis Report",
                 )
+
+        # Disclaimer at the bottom.
+        with gr.Accordion("Disclaimer", open=False):
+            gr.Markdown(f"*{MEDICAL_DISCLAIMER}*")
 
         analyze_btn.click(
             fn=analyze_xray,
-            inputs=[image_input, model_selector],
-            outputs=[report_output, disclaimer_output],
+            inputs=[image_input],
+            outputs=[report_output],
         )
 
     return demo

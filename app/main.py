@@ -117,7 +117,12 @@ async def predict(
 
     return {
         "diagnoses": [
-            {"disease": d.disease, "confidence": d.confidence, "rank": d.rank}
+            {
+                "disease": d.disease,
+                "probability": d.probability,
+                "confidence": d.confidence,
+                "threshold": d.threshold,
+            }
             for d in result.diagnoses
         ],
         "model": result.model_name,

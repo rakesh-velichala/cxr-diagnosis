@@ -71,6 +71,9 @@ class AppConfig:
         default_factory=lambda: os.getenv("CXR_DEVICE", "cuda")
     )
 
+    # ── Thresholds ─────────────────────────────────────────────────
+    thresholds_path: Path = field(init=False)
+
     # ── Retrieval (kept for embedding scripts) ────────────────────────
     top_k: int = field(
         default_factory=lambda: int(os.getenv("CXR_TOP_K", "5"))
@@ -96,6 +99,12 @@ class AppConfig:
         self.embeddings_path = self.data_dir / "dataset_embeddings.npy"
         self.csv_path = self.data_dir / "dataset.csv"
         self.image_dir = self.data_dir / "images"
+        self.thresholds_path = Path(
+            os.getenv(
+                "CXR_THRESHOLDS_PATH",
+                str(self.project_root / "evaluation" / "results" / "threshold-selection-12" / "thresholds.json"),
+            )
+        )
 
 
 # Singleton used throughout the application.

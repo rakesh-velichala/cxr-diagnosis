@@ -1,7 +1,8 @@
-"""TorchXRayVision DenseNet backend for chest X-ray diagnosis."""
+"""TorchXRayVision DenseNet backend with calibrated per-class thresholds."""
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 import numpy as np
@@ -12,28 +13,12 @@ from app.config import settings
 from models.base import BaseModel, Diagnosis, DISEASE_LABELS
 from utils.logging_config import logger
 
-# Mapping from TorchXRayVision label names to our canonical labels.
-_XRV_TO_CANONICAL = {
-    "Atelectasis": "Atelectasis",
-    "Cardiomegaly": "Cardiomegaly",
-    "Consolidation": "Consolidation",
-    "Edema": "Edema",
-    "Effusion": "Effusion",
-    "Emphysema": "Emphysema",
-    "Fibrosis": "Fibrosis",
-    "Hernia": "Hernia",
-    "Infiltration": "Infiltration",
-    "Mass": "Mass",
-    "Nodule": "Nodule",
-    "Pleural_Thickening": "Pleural_Thickening",
-    "Pneumonia": "Pneumonia",
-    "Pneumothorax": "Pneumothorax",
-    "No Finding": "No Finding",
-}
+# The 11 disease labels (excludes "No Finding") that the model scores.
+_SCORED_LABELS = [l for l in DISEASE_LABELS if l != "No Finding"]
 
 
 class DenseNetBackend(BaseModel):
-    """Pre-trained DenseNet-121 from TorchXRayVision."""
+    """Pre-trained DenseNet-121 with calibrated per-class thresholds."""
 
     def __init__(self, device: Optional[str] = None) -> None:
         import torchxrayvision as xrv
@@ -43,14 +28,35 @@ class DenseNetBackend(BaseModel):
             logger.warning("CUDA unavailable, falling back to CPU")
             self.device = "cpu"
 
+        # Load thresholds.
+        self.thresholds: dict[str, float] = {}
+        thr_path = settings.thresholds_path
+        if thr_path.exists():
+            with open(thr_path) as f:
+                data = json.load(f)
+            for label in _SCORED_LABELS:
+                if label in data and "threshold" in data[label]:
+                    self.thresholds[label] = data[label]["threshold"]
+            logger.info("Loaded thresholds for %d labels from %s", len(self.thresholds), thr_path)
+        else:
+            logger.warning("Thresholds file not found: %s — using 0.5 default", thr_path)
+            self.thresholds = {label: 0.5 for label in _SCORED_LABELS}
+
+        # Load model.
         logger.info("Loading TorchXRayVision DenseNet (densenet121-res224-all)")
         self.model = xrv.models.DenseNet(weights="densenet121-res224-all")
         self.model = self.model.to(self.device)
         self.model.eval()
 
-        # Store the model's pathology list for label mapping.
-        self.xrv_labels = self.model.pathologies
-        logger.info("DenseNet loaded — pathologies: %s", self.xrv_labels)
+        # Build label → model output index mapping.
+        self.xrv_labels = list(self.model.pathologies)
+        self.label_to_idx: dict[str, int] = {}
+        for label in _SCORED_LABELS:
+            if label in self.xrv_labels:
+                self.label_to_idx[label] = self.xrv_labels.index(label)
+        logger.info(
+            "DenseNet loaded — matched %d/%d labels", len(self.label_to_idx), len(_SCORED_LABELS)
+        )
 
     @property
     def name(self) -> str:
@@ -59,72 +65,50 @@ class DenseNetBackend(BaseModel):
     @torch.no_grad()
     def diagnose(self, image: Image.Image) -> list[Diagnosis]:
         import torchxrayvision as xrv
-        import torchvision.transforms as transforms
 
-        # Convert to grayscale numpy array normalized to [0, 255].
+        # Preprocess: grayscale, normalize to [-1024, 1024], resize to 224x224.
         image = image.convert("L")
         img_np = np.array(image).astype(np.float32)
-
-        # TorchXRayVision expects images in [-1024, 1024] range.
-        # Scale from [0, 255] to [-1024, 1024].
         img_np = (img_np / 255.0) * 2048.0 - 1024.0
-
-        # Add channel dimension: (H, W) -> (1, H, W).
         img_np = img_np[np.newaxis, :, :]
+        resize = xrv.datasets.XRayResizer(224)
+        img_np = resize(img_np)
 
-        # Resize to 224x224 using xrv's transform.
-        transform = transforms.Compose([
-            xrv.datasets.XRayCenterCrop(),
-            xrv.datasets.XRayResizer(224),
-        ])
-        img_np = transform(img_np)
-
-        # Convert to tensor and add batch dimension.
         img_tensor = torch.from_numpy(img_np).unsqueeze(0).to(self.device)
-
-        # Run inference.
         output = self.model(img_tensor)
-        probs = output[0].cpu().numpy()
+        probs = torch.sigmoid(output).cpu().numpy()[0]
 
-        # Map xrv labels to our canonical labels and collect scores.
-        scored: list[tuple[str, float]] = []
-        for i, xrv_label in enumerate(self.xrv_labels):
-            canonical = _XRV_TO_CANONICAL.get(xrv_label)
-            if canonical and canonical in DISEASE_LABELS:
-                scored.append((canonical, float(probs[i])))
+        # Check each disease against its calibrated threshold.
+        findings: list[Diagnosis] = []
+        for label, idx in self.label_to_idx.items():
+            prob = float(probs[idx])
+            thr = self.thresholds.get(label, 0.5)
+            if prob >= thr:
+                if prob >= thr + 0.10:
+                    conf = "High"
+                else:
+                    conf = "Moderate"
+                findings.append(Diagnosis(
+                    disease=label,
+                    probability=round(prob, 4),
+                    confidence=conf,
+                    threshold=round(thr, 4),
+                ))
 
-        # Sort by descending probability.
-        scored.sort(key=lambda x: -x[1])
+        # Sort by probability descending.
+        findings.sort(key=lambda d: -d.probability)
 
         logger.info(
-            "DenseNet top-5: %s",
-            [(name, f"{score:.3f}") for name, score in scored[:5]],
+            "DenseNet findings: %s",
+            [(f.disease, f"{f.probability:.3f}") for f in findings] or ["No Finding"],
         )
 
-        # Check if "No Finding" should be the prediction.
-        # If the highest pathology score is below a threshold, predict No Finding.
-        top_pathologies = [(n, s) for n, s in scored if n != "No Finding"]
-        no_finding_threshold = 0.5
+        if not findings:
+            return [Diagnosis(
+                disease="No Finding",
+                probability=1.0,
+                confidence="High",
+                threshold=0.0,
+            )]
 
-        if not top_pathologies or top_pathologies[0][1] < no_finding_threshold:
-            # Check if any pathology has a reasonable score.
-            if top_pathologies and top_pathologies[0][1] > 0.3:
-                # Borderline — return top pathology with Low confidence.
-                name, score = top_pathologies[0]
-                return [Diagnosis(disease=name, confidence="Low", rank=1)]
-            return [Diagnosis(disease="No Finding", confidence="High", rank=1)]
-
-        # Return top 1-2 diagnoses.
-        results: list[Diagnosis] = []
-        for rank, (name, score) in enumerate(top_pathologies[:2], start=1):
-            if score < 0.2:
-                break
-            if score >= 0.7:
-                conf = "High"
-            elif score >= 0.5:
-                conf = "Moderate"
-            else:
-                conf = "Low"
-            results.append(Diagnosis(disease=name, confidence=conf, rank=rank))
-
-        return results or [Diagnosis(disease="No Finding", confidence="Low", rank=1)]
+        return findings
