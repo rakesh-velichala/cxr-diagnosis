@@ -1,4 +1,4 @@
-"""TorchXRayVision DenseNet backend with calibrated per-class thresholds."""
+"""Fine-tuned DenseNet-121 backend with calibrated per-class thresholds."""
 
 from __future__ import annotations
 
@@ -7,22 +7,51 @@ from typing import Optional
 
 import numpy as np
 import torch
+import torch.nn as nn
 from PIL import Image
 
 from app.config import settings
 from models.base import BaseModel, Diagnosis, DISEASE_LABELS
 from utils.logging_config import logger
 
-# The 11 disease labels (excludes "No Finding") that the model scores.
+# The 3 disease labels (excludes "No Finding") that we score.
 _SCORED_LABELS = [l for l in DISEASE_LABELS if l != "No Finding"]
+
+# The 11 labels the fine-tuned model was trained on (output order).
+_MODEL_LABELS = [
+    "Atelectasis", "Cardiomegaly", "Consolidation", "Edema", "Effusion",
+    "Fibrosis", "Infiltration", "Mass", "Nodule",
+    "Pleural_Thickening", "Pneumothorax",
+]
+
+
+class _FineTunedDenseNet(nn.Module):
+    """Architecture must match the training script exactly."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        import torchxrayvision as xrv
+
+        base = xrv.models.DenseNet(weights="densenet121-res224-all")
+        self.features = base.features
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.3),
+            nn.Linear(1024, len(_MODEL_LABELS)),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.features(x)
+        out = self.pool(features)
+        out = out.view(out.size(0), -1)
+        out = self.classifier(out)
+        return out
 
 
 class DenseNetBackend(BaseModel):
-    """Pre-trained DenseNet-121 with calibrated per-class thresholds."""
+    """Fine-tuned DenseNet-121 with calibrated per-class thresholds."""
 
     def __init__(self, device: Optional[str] = None) -> None:
-        import torchxrayvision as xrv
-
         self.device = device or settings.device
         if self.device == "cuda" and not torch.cuda.is_available():
             logger.warning("CUDA unavailable, falling back to CPU")
@@ -42,25 +71,28 @@ class DenseNetBackend(BaseModel):
             logger.warning("Thresholds file not found: %s — using 0.5 default", thr_path)
             self.thresholds = {label: 0.5 for label in _SCORED_LABELS}
 
-        # Load model.
-        logger.info("Loading TorchXRayVision DenseNet (densenet121-res224-all)")
-        self.model = xrv.models.DenseNet(weights="densenet121-res224-all")
+        # Load fine-tuned model.
+        checkpoint_path = settings.project_root / "models" / "checkpoints" / "densenet-finetuned-bce" / "best_model.pth"
+        logger.info("Loading fine-tuned DenseNet from %s", checkpoint_path)
+        self.model = _FineTunedDenseNet()
+        self.model.load_state_dict(
+            torch.load(checkpoint_path, map_location=self.device, weights_only=True)
+        )
         self.model = self.model.to(self.device)
         self.model.eval()
 
-        # Build label → model output index mapping.
-        self.xrv_labels = list(self.model.pathologies)
+        # Build label → model output index mapping for the 3 target diseases.
         self.label_to_idx: dict[str, int] = {}
         for label in _SCORED_LABELS:
-            if label in self.xrv_labels:
-                self.label_to_idx[label] = self.xrv_labels.index(label)
+            if label in _MODEL_LABELS:
+                self.label_to_idx[label] = _MODEL_LABELS.index(label)
         logger.info(
-            "DenseNet loaded — matched %d/%d labels", len(self.label_to_idx), len(_SCORED_LABELS)
+            "Fine-tuned DenseNet loaded — scoring %d diseases", len(self.label_to_idx)
         )
 
     @property
     def name(self) -> str:
-        return "DenseNet-121 (TorchXRayVision)"
+        return "DenseNet-121 (Fine-tuned)"
 
     @torch.no_grad()
     def diagnose(self, image: Image.Image) -> list[Diagnosis]:
@@ -75,8 +107,8 @@ class DenseNetBackend(BaseModel):
         img_np = resize(img_np)
 
         img_tensor = torch.from_numpy(img_np).unsqueeze(0).to(self.device)
-        output = self.model(img_tensor)
-        probs = torch.sigmoid(output).cpu().numpy()[0]
+        logits = self.model(img_tensor)
+        probs = torch.sigmoid(logits).cpu().numpy()[0]
 
         # Check each disease against its calibrated threshold.
         findings: list[Diagnosis] = []

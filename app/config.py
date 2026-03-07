@@ -102,7 +102,7 @@ class AppConfig:
         self.thresholds_path = Path(
             os.getenv(
                 "CXR_THRESHOLDS_PATH",
-                str(self.project_root / "evaluation" / "results" / "threshold-selection-12" / "thresholds.json"),
+                str(self.project_root / "evaluation" / "results" / "threshold-finetuned" / "thresholds.json"),
             )
         )
 
