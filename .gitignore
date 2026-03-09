@@ -46,3 +46,6 @@ evaluation/results/
 
 # Fine-tuned model checkpoints
 models/checkpoints/
+
+# Personal documentation (kept local only)
+PROJECT_DOCUMENTATION.md
